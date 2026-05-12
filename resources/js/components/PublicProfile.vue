@@ -82,11 +82,17 @@ export default {
       sending: false
     }
   },
+  computed: {
+    // Получаем параметр из маршрута
+    userParam() {
+      return this.$route.params.username
+    }
+  },
   async created() {
     await this.loadProfile()
   },
   watch: {
-    '$route.params.username': {
+    userParam: {
       handler() {
         this.loadProfile()
       }
@@ -94,11 +100,15 @@ export default {
   },
   methods: {
     async loadProfile() {
+      if (!this.userParam) return
+      
       this.isLoading = true
-      const publicLink = this.$route.params.username
+      console.log('Loading profile for:', this.userParam) // Для отладки
       
       try {
-        const response = await api.getPublicQuestions(publicLink)
+        const response = await api.getPublicQuestions(this.userParam)
+        
+        console.log('API response:', response.data) // Для отладки
         
         if (response.data.user) {
           this.profileUser = response.data.user
@@ -111,7 +121,11 @@ export default {
         console.error('Failed to load profile:', error)
         
         if (error.response?.status === 404) {
-          this.profileUser = { name: 'Пользователь не найден' }
+          this.profileUser = { 
+            name: 'Пользователь не найден',
+            username: '',
+            bio: ''
+          }
         }
       } finally {
         this.isLoading = false
@@ -124,12 +138,18 @@ export default {
         return
       }
       
+      if (!this.profileUser.public_link) {
+        alert('Ошибка: не удалось определить пользователя')
+        return
+      }
+      
       this.sending = true
       const formData = new FormData()
       formData.append('content', this.questionContent)
       
       try {
-        const publicLink = this.$route.params.username
+        // Используем public_link для отправки вопроса
+        const publicLink = this.profileUser.public_link || this.userParam
         
         await api.askQuestion(publicLink, formData)
         

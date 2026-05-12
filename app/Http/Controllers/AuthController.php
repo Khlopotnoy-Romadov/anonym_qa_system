@@ -25,19 +25,37 @@ class AuthController extends Controller
                 'email' => $validated['email'],
                 'password' => Hash::make($validated['password']),
                 'username' => $validated['username'],
-                'public_link' => Str::random(8)
+                'public_link' => Str::random(12) // Увеличил до 12 символов для уникальности
             ]);
+
+            // Создаем токен при регистрации
+            $token = $user->createToken('auth_token')->plainTextToken;
 
             return response()->json([
                 'success' => true,
-                'user' => $user,
+                'user' => [
+                    'id' => $user->id,
+                    'name' => $user->name,
+                    'email' => $user->email,
+                    'username' => $user->username,
+                    'public_link' => $user->public_link,
+                    'bio' => $user->bio
+                ],
+                'token' => $token,
                 'message' => 'Registration successful'
             ], 201);
             
-        } catch (\Exception $e) {
+        } catch (\Illuminate\Validation\ValidationException $e) {
             return response()->json([
                 'success' => false,
-                'message' => $e->getMessage()
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (\Exception $e) {
+            Log::error('Registration error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Registration failed'
             ], 500);
         }
     }
@@ -50,34 +68,20 @@ class AuthController extends Controller
                 'password' => 'required'
             ]);
 
-            // Ищем пользователя
             $user = User::where('email', $request->email)->first();
-            
-            // Отладочная информация
-            $debug = [
-                'email_provided' => $request->email,
-                'user_found' => $user ? 'yes' : 'no',
-                'user_id' => $user ? $user->id : null,
-                'password_check' => $user ? (Hash::check($request->password, $user->password) ? 'true' : 'false') : 'n/a'
-            ];
-            
-            Log::info('Login attempt', $debug);
 
-            if (!$user) {
+            if (!$user || !Hash::check($request->password, $user->password)) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'User not found',
-                    'debug' => $debug
+                    'message' => 'Invalid credentials'
                 ], 401);
             }
 
-            if (!Hash::check($request->password, $user->password)) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Invalid password',
-                    'debug' => $debug
-                ], 401);
-            }
+            // Удаляем старые токены для чистоты
+            $user->tokens()->delete();
+
+            // Создаем новый токен
+            $token = $user->createToken('auth_token')->plainTextToken;
 
             return response()->json([
                 'success' => true,
@@ -85,26 +89,58 @@ class AuthController extends Controller
                     'id' => $user->id,
                     'name' => $user->name,
                     'email' => $user->email,
-                    'username' => $user->username
+                    'username' => $user->username,
+                    'public_link' => $user->public_link,
+                    'bio' => $user->bio
                 ],
+                'token' => $token,
                 'message' => 'Login successful'
             ]);
             
-        } catch (\Exception $e) {
+        } catch (\Illuminate\Validation\ValidationException $e) {
             return response()->json([
                 'success' => false,
-                'message' => $e->getMessage()
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (\Exception $e) {
+            Log::error('Login error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Login failed'
             ], 500);
         }
     }
 
     public function logout(Request $request)
     {
-        return response()->json(['success' => true, 'message' => 'Logged out']);
+        try {
+            // Удаляем текущий токен
+            $request->user()->currentAccessToken()->delete();
+            
+            return response()->json([
+                'success' => true, 
+                'message' => 'Logged out successfully'
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Logout failed'
+            ], 500);
+        }
     }
 
     public function me(Request $request)
     {
-        return response()->json($request->user());
+        $user = $request->user();
+        
+        return response()->json([
+            'id' => $user->id,
+            'name' => $user->name,
+            'email' => $user->email,
+            'username' => $user->username,
+            'public_link' => $user->public_link,
+            'bio' => $user->bio
+        ]);
     }
 }

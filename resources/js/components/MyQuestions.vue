@@ -85,12 +85,17 @@ export default {
   computed: {
     ...mapState(['user']),
     profileUrl() {
+      // Используем username или public_link
+      if (this.user?.username) {
+        return `${window.location.origin}/user/${this.user.username}`
+      }
       if (this.user?.public_link) {
         return `${window.location.origin}/user/${this.user.public_link}`
       }
       return ''
     }
   },
+
   data() {
     return {
       questions: [],

@@ -1,28 +1,9 @@
 // resources/js/services/api.js
 import axios from 'axios'
 
-// Определяем режим работы
-const USE_REAL_API = false // Переключите на true когда будет готов бэкенд
+const USE_REAL_API = true // поменять на false когда не работает бэкенд
 
-// Настройка реального API
-if (USE_REAL_API) {
-    axios.defaults.baseURL = 'http://127.0.0.1:8000'
-    axios.defaults.headers.common['Accept'] = 'application/json'
-    axios.defaults.headers.common['Content-Type'] = 'application/json'
-    
-    const token = localStorage.getItem('qa_token')
-    if (token) {
-        axios.defaults.headers.common['Authorization'] = `Bearer ${token}`
-    }
-}
-
-// Импорт локального хранилища для тестового режима
-import { LocalStorageAPI } from './localStorageApi'
-
-// Экспортируем соответствующий API
-export const api = USE_REAL_API ? new RealAPI() : new LocalStorageAPI()
-
-// Класс для работы с реальным API
+// ============ Класс для работы с реальным API ============
 class RealAPI {
     register(userData) {
         return axios.post('/api/register', userData)
@@ -54,3 +35,33 @@ class RealAPI {
         return axios.patch(`/api/questions/${questionId}/toggle-public`)
     }
 }
+
+// Настройка реального API если включено
+if (USE_REAL_API) {
+    axios.defaults.baseURL = 'http://127.0.0.1:8000'
+    axios.defaults.headers.common['Accept'] = 'application/json'
+    axios.defaults.headers.common['Content-Type'] = 'application/json'
+    
+    const token = localStorage.getItem('qa_token')
+    if (token) {
+        axios.defaults.headers.common['Authorization'] = `Bearer ${token}`
+    }
+    
+    // Перехватчик для обработки ошибок
+    axios.interceptors.response.use(
+        response => response,
+        error => {
+            if (error.response?.status === 401) {
+                localStorage.removeItem('qa_token')
+                localStorage.removeItem('qa_current_user')
+            }
+            return Promise.reject(error)
+        }
+    )
+}
+
+// Импорт локального хранилища для тестового режима
+import { LocalStorageAPI } from './localStorageApi'
+
+// Экспортируем соответствующий API (теперь классы объявлены до использования)
+export const api = USE_REAL_API ? new RealAPI() : new LocalStorageAPI()
