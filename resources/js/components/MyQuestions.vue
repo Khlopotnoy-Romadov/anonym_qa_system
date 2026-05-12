@@ -20,9 +20,10 @@
             {{ question.is_answered ? '✓ Отвечено' : '❓ Ожидает ответа' }}
           </span>
           <label class="public-toggle">
+            <!-- Исправлено: убираем v-model, используем :checked и @change -->
             <input 
               type="checkbox" 
-              v-model="question.is_public" 
+              :checked="question.is_public"
               @change="togglePublic(question)"
               :disabled="!question.is_answered"
             >
@@ -85,7 +86,6 @@ export default {
   computed: {
     ...mapState(['user']),
     profileUrl() {
-      // Используем username или public_link
       if (this.user?.username) {
         return `${window.location.origin}/user/${this.user.username}`
       }
@@ -95,7 +95,6 @@ export default {
       return ''
     }
   },
-
   data() {
     return {
       questions: [],
@@ -113,11 +112,11 @@ export default {
       this.isLoading = true
       try {
         const response = await api.getMyQuestions(this.user.id)
-        this.questions = response.data
+        this.questions = Array.isArray(response.data) ? response.data : []
         
         // Инициализируем answers для неотвеченных вопросов
         this.questions.forEach(q => {
-          if (!q.answer) {
+          if (!q.answer && !this.answers[q.id]) {
             this.answers[q.id] = ''
           }
         })
@@ -141,19 +140,28 @@ export default {
         alert('Ответ успешно опубликован!')
       } catch (error) {
         console.error('Failed to submit answer:', error)
-        alert('Ошибка при публикации ответа')
+        alert('Ошибка при публикации ответа: ' + (error.response?.data?.message || 'Неизвестная ошибка'))
       }
     },
     
     async togglePublic(question) {
+      // Сохраняем текущее значение на случай ошибки
+      const previousValue = question.is_public
+      
       try {
-        await api.toggleQuestionPublic(question.id)
-        // Обновляем локальное состояние
-        question.is_public = !question.is_public
+        const response = await api.toggleQuestionPublic(question.id)
+        
+        // Обновляем значение из ответа сервера
+        if (response.data && typeof response.data.is_public !== 'undefined') {
+          question.is_public = response.data.is_public
+        } else {
+          // Если сервер не вернул статус, переключаем локально
+          question.is_public = !question.is_public
+        }
       } catch (error) {
         console.error('Failed to toggle visibility:', error)
-        // Возвращаем предыдущее состояние в случае ошибки
-        question.is_public = !question.is_public
+        // Возвращаем предыдущее значение
+        question.is_public = previousValue
         alert('Ошибка при изменении видимости вопроса')
       }
     },
@@ -161,18 +169,27 @@ export default {
     copyLink() {
       if (this.profileUrl) {
         navigator.clipboard.writeText(this.profileUrl)
-        alert('Ссылка скопирована в буфер обмена!')
+          .then(() => alert('Ссылка скопирована в буфер обмена!'))
+          .catch(() => alert('Не удалось скопировать ссылку'))
       }
     },
     
     getImageUrl(path) {
       if (!path) return null
+      // Проверяем, является ли путь уже полным URL
+      if (path.startsWith('http')) {
+        return path
+      }
       return `/storage/${path}`
     },
     
     formatDate(dateString) {
       if (!dateString) return ''
       const date = new Date(dateString)
+      // Проверяем валидность даты
+      if (isNaN(date.getTime())) {
+        return dateString // Возвращаем как есть если невалидная дата
+      }
       return date.toLocaleString('ru-RU', {
         day: '2-digit',
         month: '2-digit',
@@ -227,6 +244,18 @@ export default {
   gap: 5px;
   cursor: pointer;
   font-size: 0.9rem;
+  user-select: none; /* Предотвращает выделение текста */
+}
+
+.public-toggle input[type="checkbox"] {
+  cursor: pointer;
+  width: 16px;
+  height: 16px;
+}
+
+.public-toggle input[type="checkbox"]:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 
 .existing-answer {
@@ -242,6 +271,7 @@ export default {
 
 .answer-form textarea {
   margin-bottom: 10px;
+  width: 100%;
 }
 
 .question-date, .answer-date {
@@ -260,5 +290,14 @@ export default {
   margin-top: 10px;
   font-size: 0.9rem;
   color: #999;
+}
+
+/* Добавим стили для изображений вопросов */
+.question-image {
+  max-width: 100%;
+  max-height: 300px;
+  border-radius: 5px;
+  margin-top: 10px;
+  object-fit: cover;
 }
 </style>
