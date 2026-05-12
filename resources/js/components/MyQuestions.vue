@@ -1,4 +1,3 @@
-<!-- resources/js/components/MyQuestions.vue -->
 <template>
   <div class="container">
     <div class="card">
@@ -15,14 +14,18 @@
     <div class="questions-list">
       <h2>Полученные вопросы</h2>
       
-      <!-- Тестовые данные для демонстрации -->
-      <div v-for="question in displayQuestions" :key="question.id" class="question-card card">
+      <div v-for="question in questions" :key="question.id" class="question-card card">
         <div class="question-header">
           <span class="status" :class="{ answered: question.is_answered }">
             {{ question.is_answered ? '✓ Отвечено' : '❓ Ожидает ответа' }}
           </span>
           <label class="public-toggle">
-            <input type="checkbox" v-model="question.is_public" @change="togglePublic(question)">
+            <input 
+              type="checkbox" 
+              v-model="question.is_public" 
+              @change="togglePublic(question)"
+              :disabled="!question.is_answered"
+            >
             Публичный
           </label>
         </div>
@@ -50,14 +53,18 @@
             placeholder="Напишите ваш ответ..."
             rows="3"
           ></textarea>
-          <button @click="submitAnswer(question.id)" class="btn btn-primary">
+          <button 
+            @click="submitAnswer(question.id)" 
+            class="btn btn-primary"
+            :disabled="!answers[question.id]?.trim()"
+          >
             Опубликовать ответ
           </button>
         </div>
       </div>
 
       <!-- Сообщение если нет вопросов -->
-      <div v-if="displayQuestions.length === 0 && !isLoading" class="card empty-state">
+      <div v-if="questions.length === 0 && !isLoading" class="card empty-state">
         <p>📭 У вас пока нет вопросов</p>
         <p class="hint">Поделитесь вашей публичной ссылкой, чтобы получать анонимные вопросы</p>
       </div>
@@ -72,119 +79,50 @@
 
 <script>
 import { mapState } from 'vuex'
-import axios from 'axios'
+import { api } from '../services/api'
 
 export default {
   computed: {
     ...mapState(['user']),
     profileUrl() {
-      return `${window.location.origin}/user/${this.user?.username}`
-    },
-    // Объединяем реальные и тестовые данные
-    displayQuestions() {
-      if (this.realQuestions.length > 0) {
-        return this.realQuestions
+      if (this.user?.public_link) {
+        return `${window.location.origin}/user/${this.user.public_link}`
       }
-      // Если реальных данных нет, показываем тестовые
-      return this.mockQuestions
+      return ''
     }
   },
   data() {
     return {
-      realQuestions: [],      // Реальные данные с сервера
-      isLoading: false,       // Флаг загрузки
-      answers: {},            // Временные ответы
-      
-      // Тестовые данные для демонстрации
-      mockQuestions: [
-        {
-          id: 1,
-          content: 'Как вам идея создания анонимного Q&A сервиса? Что вдохновило вас на это?',
-          is_answered: false,
-          is_public: true,
-          image: null,
-          created_at: '2026-04-21 10:30:00',
-          answer: null
-        },
-        {
-          id: 2,
-          content: 'Какие технологии вы используете в этом проекте?',
-          is_answered: false,
-          is_public: true,
-          image: null,
-          created_at: '2026-04-20 15:45:00',
-          answer: null
-        },
-        {
-          id: 3,
-          content: 'Планируете ли вы добавить возможность загружать несколько изображений к вопросу?',
-          is_answered: true,
-          is_public: true,
-          image: null,
-          created_at: '2026-04-19 09:20:00',
-          answer: {
-            id: 1,
-            content: 'Да, это в планах! Сначала хочу реализовать базовый функционал, а затем добавить поддержку множественных изображений и видео.',
-            created_at: '2026-04-19 14:15:00'
-          }
-        },
-        {
-          id: 4,
-          content: 'Будет ли модерация контента и возможность жаловаться на оскорбительные вопросы?',
-          is_answered: false,
-          is_public: false,
-          image: null,
-          created_at: '2026-04-18 18:30:00',
-          answer: null
-        },
-        {
-          id: 5,
-          content: 'Как вы решаете проблему анонимности и безопасности данных пользователей?',
-          is_answered: true,
-          is_public: true,
-          image: null,
-          created_at: '2026-04-17 12:00:00',
-          answer: {
-            id: 2,
-            content: 'Мы используем шифрование данных, не храним IP-адреса задающих вопросы, а публичные ссылки генерируются случайным образом для дополнительной анонимности.',
-            created_at: '2026-04-17 16:30:00'
-          }
-        }
-      ]
+      questions: [],
+      isLoading: false,
+      answers: {}
     }
   },
   async created() {
     await this.loadQuestions()
   },
   methods: {
-    // Загрузка реальных вопросов с сервера
     async loadQuestions() {
+      if (!this.user?.id) return
+      
       this.isLoading = true
       try {
-        const response = await axios.get('/api/my-questions')
-        if (response.data && Array.isArray(response.data)) {
-          this.realQuestions = response.data
-          // Инициализируем answers для неотвеченных вопросов
-          this.realQuestions.forEach(q => {
-            if (!q.answer) {
-              this.answers[q.id] = ''
-            }
-          })
-        } else if (response.data && response.data.questions) {
-          this.realQuestions = response.data.questions
-        }
+        const response = await api.getMyQuestions(this.user.id)
+        this.questions = response.data
+        
+        // Инициализируем answers для неотвеченных вопросов
+        this.questions.forEach(q => {
+          if (!q.answer) {
+            this.answers[q.id] = ''
+          }
+        })
       } catch (error) {
         console.error('Failed to load questions:', error)
-        // Если ошибка 401 (не авторизован), не показываем ошибку
-        if (error.response?.status !== 401) {
-          console.error('Error details:', error.response?.data)
-        }
       } finally {
         this.isLoading = false
       }
     },
     
-    // Отправка ответа
     async submitAnswer(questionId) {
       const content = this.answers[questionId]
       if (!content?.trim()) {
@@ -193,40 +131,40 @@ export default {
       }
       
       try {
-        await axios.post(`/api/questions/${questionId}/answer`, { content })
-        await this.loadQuestions()
+        await api.answerQuestion(questionId, content)
+        await this.loadQuestions() // Перезагружаем вопросы
         alert('Ответ успешно опубликован!')
       } catch (error) {
         console.error('Failed to submit answer:', error)
-        alert('Ошибка при публикации ответа: ' + (error.response?.data?.message || 'Неизвестная ошибка'))
+        alert('Ошибка при публикации ответа')
       }
     },
     
-    // Переключение публичности вопроса
     async togglePublic(question) {
-      const originalValue = question.is_public
       try {
-        await axios.patch(`/api/questions/${question.id}/toggle-public`)
+        await api.toggleQuestionPublic(question.id)
+        // Обновляем локальное состояние
+        question.is_public = !question.is_public
       } catch (error) {
         console.error('Failed to toggle visibility:', error)
-        question.is_public = originalValue
+        // Возвращаем предыдущее состояние в случае ошибки
+        question.is_public = !question.is_public
         alert('Ошибка при изменении видимости вопроса')
       }
     },
     
-    // Копирование ссылки
     copyLink() {
-      navigator.clipboard.writeText(this.profileUrl)
-      alert('Ссылка скопирована в буфер обмена!')
+      if (this.profileUrl) {
+        navigator.clipboard.writeText(this.profileUrl)
+        alert('Ссылка скопирована в буфер обмена!')
+      }
     },
     
-    // Получение URL изображения
     getImageUrl(path) {
       if (!path) return null
       return `/storage/${path}`
     },
     
-    // Форматирование даты
     formatDate(dateString) {
       if (!dateString) return ''
       const date = new Date(dateString)
@@ -237,18 +175,6 @@ export default {
         hour: '2-digit',
         minute: '2-digit'
       })
-    },
-    
-    // Очистка тестовых данных (для переключения на реальные)
-    useRealData() {
-      this.realQuestions = []
-      this.loadQuestions()
-    },
-    
-    // Сброс на тестовые данные
-    resetToMockData() {
-      this.realQuestions = []
-      this.answers = {}
     }
   }
 }
