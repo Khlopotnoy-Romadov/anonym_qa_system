@@ -1,21 +1,21 @@
 <template>
   <div class="container">
     <div class="card" style="max-width: 500px; margin: 50px auto;">
-      <h2>Login</h2>
+      <h2>Логин</h2>
       <form @submit.prevent="handleLogin">
         <div class="form-group">
-          <label>Email</label>
+          <label>Почта</label>
           <input type="email" v-model="form.email" class="form-control" required>
         </div>
         <div class="form-group">
-          <label>Password</label>
+          <label>Пароль</label>
           <input type="password" v-model="form.password" class="form-control" required>
         </div>
         <button type="submit" class="btn btn-primary" :disabled="loading">
-          {{ loading ? 'Logging in...' : 'Login' }}
+          {{ loading ? 'Входит...' : 'Войти' }}
         </button>
         <p style="margin-top: 15px;">
-          Don't have an account? <router-link to="/register">Register</router-link>
+          Еще нет аккаунта? <router-link to="/register">Зарегистрироваться</router-link>
         </p>
       </form>
       <div v-if="error" class="error">{{ error }}</div>
