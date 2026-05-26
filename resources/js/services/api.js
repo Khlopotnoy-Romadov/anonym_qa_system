@@ -34,6 +34,10 @@ class RealAPI {
     toggleQuestionPublic(questionId) {
         return axios.patch(`/api/questions/${questionId}/toggle-public`)
     }
+
+    deleteQuestion(questionId) {
+        return axios.delete(`/api/questions/${questionId}`)
+    }
 }
 
 // Настройка реального API если включено

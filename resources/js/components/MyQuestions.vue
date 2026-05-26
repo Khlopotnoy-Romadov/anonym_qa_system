@@ -19,16 +19,24 @@
           <span class="status" :class="{ answered: question.is_answered }">
             {{ question.is_answered ? '✓ Отвечено' : '❓ Ожидает ответа' }}
           </span>
-          <label class="public-toggle">
-            <!-- Исправлено: убираем v-model, используем :checked и @change -->
-            <input 
-              type="checkbox" 
-              :checked="question.is_public"
-              @change="togglePublic(question)"
-              :disabled="!question.is_answered"
+          <div class="header-actions">
+            <label class="public-toggle">
+              <input 
+                type="checkbox" 
+                :checked="question.is_public"
+                @change="togglePublic(question)"
+                :disabled="!question.is_answered"
+              >
+              Публичный
+            </label>
+            <button 
+              @click="deleteQuestion(question)" 
+              class="btn-delete"
+              title="Удалить вопрос"
             >
-            Публичный
-          </label>
+              🗑️
+            </button>
+          </div>
         </div>
         
         <div class="question-content">
@@ -136,7 +144,7 @@ export default {
       
       try {
         await api.answerQuestion(questionId, content)
-        await this.loadQuestions() // Перезагружаем вопросы
+        await this.loadQuestions()
         alert('Ответ успешно опубликован!')
       } catch (error) {
         console.error('Failed to submit answer:', error)
@@ -145,24 +153,34 @@ export default {
     },
     
     async togglePublic(question) {
-      // Сохраняем текущее значение на случай ошибки
       const previousValue = question.is_public
       
       try {
         const response = await api.toggleQuestionPublic(question.id)
         
-        // Обновляем значение из ответа сервера
         if (response.data && typeof response.data.is_public !== 'undefined') {
           question.is_public = response.data.is_public
         } else {
-          // Если сервер не вернул статус, переключаем локально
           question.is_public = !question.is_public
         }
       } catch (error) {
         console.error('Failed to toggle visibility:', error)
-        // Возвращаем предыдущее значение
         question.is_public = previousValue
         alert('Ошибка при изменении видимости вопроса')
+      }
+    },
+    
+    async deleteQuestion(question) {
+      const confirmed = confirm('Вы уверены что хотите удалить этот вопрос?')
+      if (!confirmed) return
+      
+      try {
+        await api.deleteQuestion(question.id)
+        this.questions = this.questions.filter(q => q.id !== question.id)
+        alert('Вопрос удален')
+      } catch (error) {
+        console.error('Failed to delete question:', error)
+        alert('Ошибка при удалении вопроса')
       }
     },
     
@@ -176,7 +194,6 @@ export default {
     
     getImageUrl(path) {
       if (!path) return null
-      // Проверяем, является ли путь уже полным URL
       if (path.startsWith('http')) {
         return path
       }
@@ -186,9 +203,8 @@ export default {
     formatDate(dateString) {
       if (!dateString) return ''
       const date = new Date(dateString)
-      // Проверяем валидность даты
       if (isNaN(date.getTime())) {
-        return dateString // Возвращаем как есть если невалидная дата
+        return dateString
       }
       return date.toLocaleString('ru-RU', {
         day: '2-digit',
@@ -226,6 +242,12 @@ export default {
   border-bottom: 1px solid #eee;
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
 .status {
   font-size: 0.9rem;
   padding: 3px 10px;
@@ -244,7 +266,7 @@ export default {
   gap: 5px;
   cursor: pointer;
   font-size: 0.9rem;
-  user-select: none; /* Предотвращает выделение текста */
+  user-select: none;
 }
 
 .public-toggle input[type="checkbox"] {
@@ -256,6 +278,20 @@ export default {
 .public-toggle input[type="checkbox"]:disabled {
   cursor: not-allowed;
   opacity: 0.5;
+}
+
+.btn-delete {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 1.2rem;
+  padding: 5px 8px;
+  border-radius: 5px;
+  transition: background 0.2s;
+}
+
+.btn-delete:hover {
+  background: #fee;
 }
 
 .existing-answer {
@@ -292,7 +328,6 @@ export default {
   color: #999;
 }
 
-/* Добавим стили для изображений вопросов */
 .question-image {
   max-width: 100%;
   max-height: 300px;

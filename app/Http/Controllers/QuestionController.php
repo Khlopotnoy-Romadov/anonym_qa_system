@@ -137,4 +137,23 @@ class QuestionController extends Controller
 
         return response()->json(['is_public' => $question->is_public]);
     }
+
+        public function destroy(Request $request, Question $question)
+    {
+        if ($question->user_id !== $request->user()->id) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+        
+        // Удаляем ответ если есть
+        if ($question->answer) {
+            $question->answer->delete();
+        }
+        
+        $question->delete();
+        
+        return response()->json([
+            'success' => true,
+            'message' => 'Вопрос удален'
+        ]);
+}
 }

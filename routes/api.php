@@ -21,4 +21,6 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::patch('/questions/{question}/toggle-public', [QuestionController::class, 'togglePublic']);
     
     Route::post('/questions/{question}/report', [ReportController::class, 'report']);
+
+    Route::delete('/questions/{question}', [QuestionController::class, 'destroy']);
 });
