@@ -107,7 +107,7 @@ class AuthController extends Controller
             Log::error('Login error: ' . $e->getMessage());
             return response()->json([
                 'success' => false,
-                'message' => 'Login failed'
+                'message' => 'Login failed php'
             ], 500);
         }
     }

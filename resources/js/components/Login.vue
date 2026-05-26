@@ -47,11 +47,11 @@ export default {
         if (result && result.success) {
           this.$router.push('/my-questions')
         } else {
-          this.error = result?.message || 'Login failed'
+          this.error = result?.message || 'Login failed vue 1'
         }
       } catch (error) {
         console.error('Login error:', error)
-        this.error = error.response?.data?.message || error.message || 'Login failed'
+        this.error = error.response?.data?.message || error.message || 'Login failed vue 2'
       } finally {
         this.loading = false
       }
