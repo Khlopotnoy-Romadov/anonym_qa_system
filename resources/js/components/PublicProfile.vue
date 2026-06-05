@@ -20,11 +20,29 @@
           <textarea 
             v-model="questionContent" 
             class="form-control" 
-            :class="{ 'is-danger': toxicityError }"
+            :class="{ 'is-danger': toxicityError, 'is-checking': isChecking }"
             placeholder="Напишите ваш анонимный вопрос здесь..."
             rows="4"
             required
+            :disabled="isChecking || sending"
           ></textarea>
+          
+          <!-- Индикатор проверки токсичности -->
+          <div v-if="isChecking && !successMessage" class="toxicity-checking">
+            <div class="checking-spinner"></div>
+            <div class="checking-text">
+              <strong>Проверка вопроса на токсичность...</strong>
+              <div class="checking-hint">Это может занять несколько секунд</div>
+            </div>
+          </div>
+          
+          <!-- Сообщение об успехе -->
+          <div v-if="successMessage" class="success-message">
+            <span class="success-icon">✅</span>
+            <div>
+              <strong>{{ successMessage }}</strong>
+            </div>
+          </div>
           
           <!-- Ошибка токсичности -->
           <div v-if="toxicityError" class="toxicity-error">
@@ -34,11 +52,26 @@
               <div class="toxicity-score" v-if="toxicityScore">
                 Уровень токсичности: {{ Math.round(toxicityScore * 100) }}%
               </div>
+              <button type="button" @click="clearToxicityError" class="toxicity-clear-btn">
+                ✏️ Изменить вопрос
+              </button>
+            </div>
+          </div>
+          
+          <!-- Ошибка отправки -->
+          <div v-if="errorMessage && !toxicityError" class="toxicity-error">
+            <span class="error-icon">❌</span>
+            <div>
+              <strong>{{ errorMessage }}</strong>
+              <button type="button" @click="clearErrorMessage" class="toxicity-clear-btn">
+                ✏️ Попробовать снова
+              </button>
             </div>
           </div>
         </div>
         
-        <button type="submit" class="btn btn-primary" :disabled="sending">
+        <button type="submit" class="btn btn-primary" :disabled="sending || isChecking">
+          <span v-if="sending" class="sending-spinner"></span>
           {{ sending ? 'Отправка...' : 'Отправить анонимный вопрос' }}
         </button>
       </form>
@@ -93,7 +126,10 @@ export default {
       notFound: false,
       toxicityError: false,
       toxicityMessage: '',
-      toxicityScore: 0
+      toxicityScore: 0,
+      isChecking: false,
+      successMessage: '',
+      errorMessage: ''
     }
   },
   computed: {
@@ -107,6 +143,13 @@ export default {
   watch: {
     userParam() {
       this.loadProfile()
+    },
+    // Очищаем ошибку при изменении текста
+    questionContent(newVal, oldVal) {
+      if ((this.toxicityError || this.errorMessage) && newVal !== oldVal) {
+        this.clearToxicityError()
+        this.clearErrorMessage()
+      }
     }
   },
   methods: {
@@ -128,23 +171,36 @@ export default {
     
     async submitQuestion() {
       if (!this.questionContent.trim()) {
-        alert('Пожалуйста, напишите вопрос')
+        this.errorMessage = 'Пожалуйста, напишите вопрос'
+        setTimeout(() => this.clearErrorMessage(), 5000)
         return
       }
       
-      this.sending = true
+      // Начинаем проверку токсичности
+      this.isChecking = true
       this.toxicityError = false
+      this.errorMessage = ''
+      this.successMessage = ''
       
+      // Создаем FormData для отправки
       const formData = new FormData()
       formData.append('content', this.questionContent)
       
       try {
         const userIdentifier = this.profileUser.public_link || this.userParam
+        
+        // Отправляем вопрос - проверка токсичности происходит на бекенде
         const response = await api.askQuestion(userIdentifier, formData)
         
         if (response.data.success) {
           this.questionContent = ''
-          alert('✅ Вопрос отправлен анонимно!')
+          this.successMessage = 'Вопрос отправлен анонимно!'
+          
+          // Скрываем сообщение через 5 секунд
+          setTimeout(() => {
+            this.successMessage = ''
+          }, 5000)
+          
           await this.loadProfile()
         }
       } catch (error) {
@@ -152,12 +208,27 @@ export default {
           this.toxicityError = true
           this.toxicityMessage = error.response.data.message
           this.toxicityScore = error.response.data.toxicity?.score || 0
+        } else if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
+          this.errorMessage = '⏱️ Проверка вопроса занимает слишком много времени. Пожалуйста, попробуйте еще раз или задайте более короткий вопрос.'
+          setTimeout(() => this.clearErrorMessage(), 5000)
         } else {
-          alert(error.response?.data?.message || 'Ошибка отправки')
+          this.errorMessage = error.response?.data?.message || 'Ошибка отправки вопроса'
+          setTimeout(() => this.clearErrorMessage(), 5000)
         }
       } finally {
         this.sending = false
+        this.isChecking = false
       }
+    },
+    
+    clearToxicityError() {
+      this.toxicityError = false
+      this.toxicityMessage = ''
+      this.toxicityScore = 0
+    },
+    
+    clearErrorMessage() {
+      this.errorMessage = ''
     },
     
     formatDate(dateString) {
@@ -208,5 +279,89 @@ export default {
 .is-danger {
   border-color: #dc3545 !important;
   box-shadow: 0 0 0 0.2rem rgba(220, 53, 69, 0.25) !important;
+}
+
+.is-checking {
+  border-color: #4a90e2 !important;
+  background-color: #f8f9ff !important;
+}
+
+.toxicity-checking {
+  margin-top: 10px;
+  padding: 12px 15px;
+  background: #e3f2fd;
+  border: 1px solid #90caf9;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.success-message {
+  margin-top: 10px;
+  padding: 12px 15px;
+  background: #d4edda;
+  border: 1px solid #c3e6cb;
+  border-radius: 8px;
+  color: #155724;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.success-icon {
+  font-size: 1.5rem;
+}
+
+.checking-spinner {
+  width: 24px;
+  height: 24px;
+  border: 3px solid #e3f2fd;
+  border-top: 3px solid #4a90e2;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.checking-text {
+  flex: 1;
+}
+
+.checking-hint {
+  font-size: 0.85rem;
+  color: #1976d2;
+  margin-top: 4px;
+}
+
+.sending-spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top: 2px solid white;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin-right: 8px;
+  vertical-align: middle;
+}
+
+.toxicity-clear-btn {
+  background: none;
+  border: none;
+  color: #721c24;
+  text-decoration: underline;
+  cursor: pointer;
+  margin-top: 6px;
+  padding: 0;
+  font-size: 0.85rem;
+}
+
+.toxicity-clear-btn:hover {
+  color: #491217;
 }
 </style>

@@ -8,11 +8,20 @@
           <input type="text" :value="profileUrl" readonly class="form-control">
           <button @click="copyLink" class="btn btn-primary">Copy Link</button>
         </div>
+        <!-- Уведомление для копирования -->
+        <div v-if="copyMessage" class="notification notification-success">
+          {{ copyMessage }}
+        </div>
       </div>
     </div>
 
     <div class="questions-list">
       <h2>Полученные вопросы</h2>
+      
+      <!-- Глобальное уведомление -->
+      <div v-if="globalMessage" class="notification" :class="globalMessageType">
+        {{ globalMessage }}
+      </div>
       
       <div v-for="question in questions" :key="question.id" class="question-card card">
         <div class="question-header">
@@ -30,7 +39,7 @@
               Публичный
             </label>
             <button 
-              @click="deleteQuestion(question)" 
+              @click="openDeleteDialog(question)" 
               class="btn-delete"
               title="Удалить вопрос"
             >
@@ -45,6 +54,11 @@
           <div v-if="question.created_at" class="question-date">
             <small>Получено: {{ formatDate(question.created_at) }}</small>
           </div>
+        </div>
+
+        <!-- Уведомление для вопроса -->
+        <div v-if="question.message" class="notification-local" :class="question.messageType">
+          {{ question.message }}
         </div>
 
         <div v-if="question.answer" class="existing-answer">
@@ -83,6 +97,27 @@
         <p>Загрузка вопросов...</p>
       </div>
     </div>
+
+    <!-- Диалоговое окно подтверждения удаления -->
+    <div v-if="showDialog" class="dialog-overlay" @click.self="closeDialog">
+      <div class="dialog">
+        <div class="dialog-header">
+          <h3>Подтверждение удаления</h3>
+          <button class="dialog-close" @click="closeDialog">×</button>
+        </div>
+        <div class="dialog-body">
+          <p>Вы уверены, что хотите удалить этот вопрос?</p>
+          <p class="dialog-question">"{{ dialogQuestion?.content }}"</p>
+          <p class="dialog-warning">Это действие необратимо.</p>
+        </div>
+        <div class="dialog-footer">
+          <button class="btn btn-secondary" @click="closeDialog">Отмена</button>
+          <button class="btn btn-danger" @click="confirmDelete" :disabled="deleting">
+            {{ deleting ? 'Удаление...' : 'Да, удалить' }}
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -107,7 +142,13 @@ export default {
     return {
       questions: [],
       isLoading: false,
-      answers: {}
+      answers: {},
+      copyMessage: '',
+      globalMessage: '',
+      globalMessageType: 'notification-success',
+      showDialog: false,
+      dialogQuestion: null,
+      deleting: false
     }
   },
   async created() {
@@ -127,9 +168,13 @@ export default {
           if (!q.answer && !this.answers[q.id]) {
             this.answers[q.id] = ''
           }
+          // Добавляем поля для сообщений
+          q.message = ''
+          q.messageType = ''
         })
       } catch (error) {
         console.error('Failed to load questions:', error)
+        this.showGlobalMessage('Ошибка загрузки вопросов', 'notification-error')
       } finally {
         this.isLoading = false
       }
@@ -138,17 +183,17 @@ export default {
     async submitAnswer(questionId) {
       const content = this.answers[questionId]
       if (!content?.trim()) {
-        alert('Пожалуйста, напишите ответ')
+        this.showQuestionMessage(questionId, 'Пожалуйста, напишите ответ', 'notification-error')
         return
       }
       
       try {
         await api.answerQuestion(questionId, content)
         await this.loadQuestions()
-        alert('Ответ успешно опубликован!')
+        this.showQuestionMessage(questionId, 'Ответ успешно опубликован!', 'notification-success')
       } catch (error) {
         console.error('Failed to submit answer:', error)
-        alert('Ошибка при публикации ответа: ' + (error.response?.data?.message || 'Неизвестная ошибка'))
+        this.showQuestionMessage(questionId, 'Ошибка при публикации ответа: ' + (error.response?.data?.message || 'Неизвестная ошибка'), 'notification-error')
       }
     },
     
@@ -160,35 +205,80 @@ export default {
         
         if (response.data && typeof response.data.is_public !== 'undefined') {
           question.is_public = response.data.is_public
+          this.showQuestionMessage(question.id, 
+            question.is_public ? 'Вопрос теперь публичный' : 'Вопрос скрыт', 
+            'notification-success'
+          )
         } else {
           question.is_public = !question.is_public
         }
       } catch (error) {
         console.error('Failed to toggle visibility:', error)
         question.is_public = previousValue
-        alert('Ошибка при изменении видимости вопроса')
+        this.showQuestionMessage(question.id, 'Ошибка при изменении видимости вопроса', 'notification-error')
       }
     },
     
-    async deleteQuestion(question) {
-      const confirmed = confirm('Вы уверены что хотите удалить этот вопрос?')
-      if (!confirmed) return
+    openDeleteDialog(question) {
+      this.dialogQuestion = question
+      this.showDialog = true
+    },
+    
+    closeDialog() {
+      this.showDialog = false
+      this.dialogQuestion = null
+      this.deleting = false
+    },
+    
+    async confirmDelete() {
+      if (!this.dialogQuestion) return
+      
+      this.deleting = true
       
       try {
-        await api.deleteQuestion(question.id)
-        this.questions = this.questions.filter(q => q.id !== question.id)
-        alert('Вопрос удален')
+        await api.deleteQuestion(this.dialogQuestion.id)
+        this.questions = this.questions.filter(q => q.id !== this.dialogQuestion.id)
+        this.showGlobalMessage('Вопрос удален', 'notification-success')
+        this.closeDialog()
       } catch (error) {
         console.error('Failed to delete question:', error)
-        alert('Ошибка при удалении вопроса')
+        this.showGlobalMessage('Ошибка при удалении вопроса', 'notification-error')
+        this.closeDialog()
       }
     },
     
     copyLink() {
       if (this.profileUrl) {
         navigator.clipboard.writeText(this.profileUrl)
-          .then(() => alert('Ссылка скопирована в буфер обмена!'))
-          .catch(() => alert('Не удалось скопировать ссылку'))
+          .then(() => {
+            this.copyMessage = 'Ссылка скопирована в буфер обмена!'
+            setTimeout(() => { this.copyMessage = '' }, 3000)
+          })
+          .catch(() => {
+            this.copyMessage = 'Не удалось скопировать ссылку'
+            setTimeout(() => { this.copyMessage = '' }, 3000)
+          })
+      }
+    },
+    
+    showGlobalMessage(message, type) {
+      this.globalMessage = message
+      this.globalMessageType = type
+      setTimeout(() => {
+        this.globalMessage = ''
+      }, 3000)
+    },
+    
+    showQuestionMessage(questionId, message, type) {
+      const question = this.questions.find(q => q.id === questionId)
+      if (question) {
+        question.message = message
+        question.messageType = type
+        setTimeout(() => {
+          if (question.message === message) {
+            question.message = ''
+          }
+        }, 3000)
       }
     },
     
@@ -334,5 +424,194 @@ export default {
   border-radius: 5px;
   margin-top: 10px;
   object-fit: cover;
+}
+
+.notification {
+  padding: 12px 15px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+  text-align: center;
+  animation: fadeInOut 3s ease;
+}
+
+.notification-success {
+  background: #d4edda;
+  border: 1px solid #c3e6cb;
+  color: #155724;
+}
+
+.notification-error {
+  background: #f8d7da;
+  border: 1px solid #f5c6cb;
+  color: #721c24;
+}
+
+.notification-local {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  animation: fadeInOut 3s ease;
+}
+
+.notification-local.notification-success {
+  background: #d4edda;
+  border: 1px solid #c3e6cb;
+  color: #155724;
+}
+
+.notification-local.notification-error {
+  background: #f8d7da;
+  border: 1px solid #f5c6cb;
+  color: #721c24;
+}
+
+.dialog-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: fadeIn 0.2s ease;
+}
+
+.dialog {
+  background: white;
+  border-radius: 12px;
+  width: 90%;
+  max-width: 450px;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  animation: slideUp 0.3s ease;
+}
+
+.dialog-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 24px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.dialog-header h3 {
+  margin: 0;
+  font-size: 1.25rem;
+  color: #111827;
+}
+
+.dialog-close {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  color: #6b7280;
+  padding: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  transition: background 0.2s;
+}
+
+.dialog-close:hover {
+  background: #f3f4f6;
+  color: #111827;
+}
+
+.dialog-body {
+  padding: 24px;
+}
+
+.dialog-body p {
+  margin: 0 0 12px 0;
+  color: #374151;
+}
+
+.dialog-question {
+  background: #f9fafb;
+  padding: 12px;
+  border-radius: 8px;
+  font-style: italic;
+  color: #4b5563;
+  border-left: 3px solid #ef4444;
+  margin: 12px 0;
+}
+
+.dialog-warning {
+  color: #dc2626;
+  font-size: 0.875rem;
+  margin-top: 12px;
+}
+
+.dialog-footer {
+  padding: 16px 24px;
+  border-top: 1px solid #e5e7eb;
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.btn-secondary {
+  background: #f3f4f6;
+  color: #374151;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.875rem;
+  transition: background 0.2s;
+}
+
+.btn-secondary:hover {
+  background: #e5e7eb;
+}
+
+.btn-danger {
+  background: #ef4444;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.875rem;
+  transition: background 0.2s;
+}
+
+.btn-danger:hover {
+  background: #dc2626;
+}
+
+.btn-danger:disabled {
+  background: #fca5a5;
+  cursor: not-allowed;
+}
+
+@keyframes fadeInOut {
+  0% { opacity: 0; transform: translateY(-10px); }
+  10% { opacity: 1; transform: translateY(0); }
+  90% { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; transform: translateY(-10px); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(30px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
 }
 </style>
